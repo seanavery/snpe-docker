@@ -1,0 +1,49 @@
+Qualcomm Technologies, Inc. (“QTI”) hereby identifies the following files, if
+present, as Redistributables, as such term is defined in and subject to the
+Snapdragon Developer Tools License Agreement that You entered into with QTI,
+the text of which is reproduced in the LICENSE.txt file.  Redistribution in
+source code form of the Redistributables is strictly prohibited.
+
+ android/snpe-release.aar
+ android/snpe-gcc-release.aar
+ examples/NativeCpp/SampleCode/jni/ExecuteNetwork.cpp
+ include/zdl/DiagLog/*
+ include/zdl/DlContainer/*
+ include/zdl/DlSystem/*
+ include/zdl/SNPE/*
+ lib/aarch64-linux-gcc4.9/libSNPE.so
+ lib/aarch64-linux-gcc4.9/libsnpe_adsp.so
+ lib/aarch64-linux-gcc4.9/libsymphony-cpu.so
+ lib/arm-android-gcc4.9/libsnpe_adsp.so
+ lib/arm-android-gcc4.9/libsnpe_dsp_domains.so
+ lib/arm-android-gcc4.9/libSNPE_G.so
+ lib/arm-android-gcc4.9/libSNPE.so
+ lib/arm-android-gcc4.9/libsymphony-cpu.so
+ lib/arm-android-gcc4.9/libsymphonypower.so
+ lib/arm-android-clang3.8/libsnpe_adsp.so
+ lib/arm-android-clang3.8/libsnpe_dsp_domains.so
+ lib/arm-android-clang3.8/libSNPE_G.so
+ lib/arm-android-clang3.8/libSNPE.so
+ lib/arm-android-clang3.8/libsymphony-cpu.so
+ lib/arm-android-clang3.8/libsymphonypower.so
+ lib/arm-android-clang3.8/libc++_shared.so
+ lib/arm-linux-gcc4.9sf/libSNPE.so
+ lib/arm-linux-gcc4.9sf/libsymphony-cpu.so
+ lib/arm-linux-gcc4.8hf/libSNPE.so
+ lib/arm-linux-gcc4.8hf/libsymphony-cpu.so
+ lib/dsp/libsnpe_dsp_skel.so
+ lib/dsp/libsnpe_dsp_domains_skel.so
+ lib/dsp/libsnpe_dsp_v65_domains_skel.so
+ lib/aarch64-android-gcc4.9/libsnpe_adsp.so
+ lib/aarch64-android-gcc4.9/libsnpe_dsp_domains.so
+ lib/aarch64-android-gcc4.9/libSNPE_G.so
+ lib/aarch64-android-gcc4.9/libSNPE.so
+ lib/aarch64-android-gcc4.9/libsymphony-cpu.so
+ lib/aarch64-android-gcc4.9/libsymphonypower.so
+ lib/aarch64-android-clang3.8/libsnpe_adsp.so
+ lib/aarch64-android-clang3.8/libsnpe_dsp_domains.so
+ lib/aarch64-android-clang3.8/libSNPE_G.so
+ lib/aarch64-android-clang3.8/libSNPE.so
+ lib/aarch64-android-clang3.8/libsymphony-cpu.so
+ lib/aarch64-android-clang3.8/libsymphonypower.so
+ lib/aarch64-android-clang3.8/libc++_shared.so

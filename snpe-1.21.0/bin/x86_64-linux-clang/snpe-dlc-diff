@@ -1,0 +1,772 @@
+#!/usr/bin/env python
+# -*- mode: python -*-
+#=============================================================================
+#
+#  Copyright (c) 2017-2018 Qualcomm Technologies, Inc.
+#  All Rights Reserved.
+#  Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+#=============================================================================
+from __future__ import print_function
+import argparse
+import logging
+import os
+import sys
+from collections import OrderedDict
+
+try:
+    import snpe
+    from snpe import snpe_dlc_utils
+    from snpe import snpe_utils
+except ImportError as ie:
+    print("Failed to find necessary package:")
+    print(str(ie))
+    print("Please ensure that $SNPE_ROOT/lib/python is in your PYTHONPATH")
+    sys.exit(1)
+
+# Assign commonly used functions from dlc_utils.py to variables
+print_row = snpe_dlc_utils.print_row
+get_si_notation = snpe_dlc_utils.get_si_notation
+
+def compare_layers_by_name(m1, m2):
+    """
+    Compares layer names between two models.
+    Stores layers with unique names/types for each model.
+
+    @param m1: First DLC model
+    @param m2: Second DLC model
+
+    @return: A list containing a boolean variable, a list, and a string.
+
+            Boolean:    True:   No unique layers
+                        False:  Some unique layers
+
+            List:       Contains two dictionaries
+                        - Model 1 unique layers
+                        - Model 2 unique layers
+
+            String:     Info message for user
+                        (will not appear when there is an output table)
+    """
+
+    # Dictionary of layer name and type info
+    m1_types_info = m1.types_info()
+    m2_types_info = m2.types_info()
+
+    # Dictionary of layer name and id info
+    m1_id_layer = m1.ids_layer()
+    m2_id_layer = m2.ids_layer()
+
+    # List of unique layers
+    m1_unique_layers = list(set(m1_types_info.keys()) - set(m2_types_info.keys()))
+    m2_unique_layers = list(set(m2_types_info.keys()) - set(m1_types_info.keys()))
+
+    # Dictionary of unique layers, sorted by type, in one-to-many relationship
+    m1_unique_sorted = {}
+    m2_unique_sorted = {}
+
+    for name, type in sorted(m1_types_info.items()):
+        if name in m1_unique_layers:
+            m1_unique_sorted.setdefault(type, []).append([name, m1_id_layer.get(name)])
+
+    for name, type in sorted(m2_types_info.items()):
+        if name in m2_unique_layers:
+            m2_unique_sorted.setdefault(type, []).append([name, m2_id_layer.get(name)])
+
+    # Check if Model 1 and 2 have all the same layers
+    if len(m1_unique_layers) == 0 and len(m2_unique_layers) == 0:
+        return [True, [m1_unique_sorted, m2_unique_sorted], '\nInfo: Model 1 and Model 2 share all of the '
+                                                            'same layer names & types\n']
+    else:
+        return [False, [m1_unique_sorted, m2_unique_sorted], 'No output message, since there is an output table']
+
+
+def compare_layers_by_parameters(m1, m2):
+    """
+    Compares parameter values between the shared layers of two models.
+    Stores layers with parameter differences for each model.
+
+    @param m1: First DLC model
+    @param m2: Second DLC model
+
+    @return: A list containing a boolean variable, a list, and a string.
+
+            Boolean:    True:   No param differences between shared layers
+                        None:   No shared layers, thus parameters not comparable
+                        False:  Some param differences between shared layers
+
+            List:       Contains two dictionaries
+                        - Model 1 layers with param differences
+                        - Model 2 layers with param differences
+
+            String:     Info message for user
+                        (will not appear when there is an output table)
+    """
+
+    # Dictionary of layer name and parameter info
+    m1_params_info = m1.params_info()
+    m2_params_info = m2.params_info()
+
+    # Dictionary of layer name and id info
+    m1_id_layer = m1.ids_layer()
+    m2_id_layer = m2.ids_layer()
+
+    # List of shared layers
+    m1_layers = OrderedDict.fromkeys(list(m1_params_info.keys()))
+    m2_layers = OrderedDict.fromkeys(list(m2_params_info.keys()))
+    shared_layers=list(OrderedDict.fromkeys(x for x in m1_layers if x in m2_layers))
+
+    m1_diff_parameters = OrderedDict()
+    m2_diff_parameters = OrderedDict()
+    for name in shared_layers:
+        if m1_params_info.get(name) != m2_params_info.get(name):
+            m1_diff_parameters.update({name: (m1_params_info.get(name), m1_id_layer.get(name))})
+            m2_diff_parameters.update({name: (m2_params_info.get(name), m2_id_layer.get(name))})
+
+    # Check if Model 1 and 2 have zero parameter differences
+    if len(m1_diff_parameters) == 0 and len(m2_diff_parameters) == 0:
+        return [True, [m1_diff_parameters, m2_diff_parameters], '\nInfo: Model 1 and Model 2 have no parameter '
+                                                                'differences between identically named layers\n', len(shared_layers)]
+    # Check if Model 1 and 2 have no shared layers
+    elif len(shared_layers) == 0:
+        return [None, [m1_diff_parameters, m2_diff_parameters], '\nWarning: Model 1 and Model 2 have no identically '
+                                                                 'named layers. Parameters are not comparable.\n']
+    else:
+        return [False, [m1_diff_parameters, m2_diff_parameters], 'No output message, since there is an output table', len(shared_layers)]
+
+def compare_layers_by_dimensions(m1, m2):
+    """
+    Compares dimensions between the shared layers of two models.
+    Stores layers with dimension differences for each model.
+
+    @param m1: First DLC model
+    @param m2: Second DLC model
+
+    @return: A list containing a boolean variable, a list, and a string.
+
+            Boolean:    True:   No dimension differences between shared layers
+                        None:   No shared layers, thus dimension not comparable
+                        False:  Some dimension differences between shared layers
+
+            List:       Contains two dictionaries
+                        - Model 1 layers with dimension differences
+                        - Model 2 layers with dimension differences
+
+            String:     Info message for user
+                        (will not appear when there is an output table)
+    """
+
+    # Dictionary of layer name and dimension info
+    m1_dims_info = m1.dims_info()
+    m2_dims_info = m2.dims_info()
+
+    # Dictionary of layer name and id info
+    m1_id_layer = m1.ids_layer()
+    m2_id_layer = m2.ids_layer()
+
+    # List of shared layers
+    m1_layers = OrderedDict.fromkeys(list(m1_dims_info.keys()))
+    m2_layers = OrderedDict.fromkeys(list(m2_dims_info.keys()))
+    shared_layers=list(OrderedDict.fromkeys(x for x in m1_layers if x in m2_layers))
+
+    m1_diff_dimensions = OrderedDict()
+    m2_diff_dimensions = OrderedDict()
+    for name in shared_layers:
+        if m1_dims_info.get(name) != m2_dims_info.get(name):
+            m1_diff_dimensions.update({name: (m1_dims_info.get(name), m1_id_layer.get(name))})
+            m2_diff_dimensions.update({name: (m2_dims_info.get(name), m2_id_layer.get(name))})
+
+    # Check if Model 1 and 2 have zero dimension differences
+    if len(m1_diff_dimensions) == 0 and len(m2_diff_dimensions) == 0:
+        return [True, [m1_diff_dimensions, m2_diff_dimensions], '\nInfo: Model 1 and Model 2 have no dimension '
+                                                                'differences between identically named layers\n', len(shared_layers)]
+    # Check if Model 1 and 2 have no shared layers
+    elif len(shared_layers) == 0:
+        return [None, [m1_diff_dimensions, m2_diff_dimensions], '\nWarning: Model 1 and Model 2 have no identically '
+                                                                 'named layers. Dimensions are not comparable.\n']
+    else:
+        return [False, [m1_diff_dimensions, m2_diff_dimensions], 'No output message, since there is an output table', len(shared_layers)]
+
+
+def compare_layers_by_weights(m1,m2):
+    """
+    Compares weights between corresponding layers of two models.
+    Stores layers with weight differences for each model.
+
+    NOTE: Comparison is only done for models with same architectures
+    i.e. identical input dimensions, layers names/types, and parameters
+
+    @param m1: First DLC model
+    @param m2: Second DLC model
+
+    @return: A list containing a boolean variable, a list, and a string.
+
+            Boolean:    True:   No weight differences between corresponding layers
+                        False:  Some weight differences between corresponding layers
+
+            List:       Layers that have differing weights across the
+                        two models
+
+            String:     Info message for user
+                        (will not appear when there is an output table)
+    """
+
+    # Dictionary of layer names and weight info
+    m1_weights_info = m1.weights_info()
+    m2_weights_info = m2.weights_info()
+
+    # Dictionary of layer name and id info
+    m1_id_layer = m1.ids_layer()
+    m2_id_layer = m2.ids_layer()
+
+    diff_weights = []
+    for name in m1_weights_info:
+
+        # Check if Model 1 and Model 2 have real-valued weights
+        if (m1_weights_info.get(name) is not None) and (m2_weights_info.get(name) is not None):
+
+            # Check if array shapes are different. If so, add layer to diff_weights
+            if m1_weights_info.get(name).shape != m2_weights_info.get(name).shape:
+                diff_weights.append([name, m1_id_layer.get(name)])
+            # Check if weight values are different. If so, add layer to diff_weights
+            else:
+                if (m1_weights_info.get(name) != m2_weights_info.get(name)).all():
+                    diff_weights.append([name, m1_id_layer.get(name)])
+
+        # Check if only one model has 'None' for weight value. If so, add to diff_weights.
+        elif (m1_weights_info.get(name) is not None) ^ (m2_weights_info.get(name) is not None):
+            diff_weights.append([name, m1_id_layer.get(name)])
+        else:
+            pass
+
+    if len(diff_weights) == 0:
+        return [True, diff_weights, '\nNote: Weights are the same\n']
+    else:
+        return [False, diff_weights, 'No output message, since there is an output table']
+
+
+def table_title(title_message):
+    """
+    Header for output table
+    """
+
+    spaces = ' ' * 10
+    col_sizes = [1 + len(header) for header in spaces]
+    col_sizes[0] = max(col_sizes[0], 1 + 40)
+
+    total_size = 2 + 2 * len(col_sizes) - 1 + sum(col_sizes)
+    print('-' * total_size)
+    print(title_message)
+    print('-' * total_size)
+
+
+def print_general_table(m1_input_dims, m2_input_dims, m1_unique_sorted, m2_unique_sorted,
+                        m1_total_macs, m2_total_macs, input_dlc_one, input_dlc_two):
+    """
+    Top level table that compares input dimensions,
+    number of unique layers between models, and total macs.
+
+    @param m1_input_dims: Input dimensions of first dlc model
+    @param m2_input_dims: Input dimensions of second dlc model
+    @param m1_unique_sorted: Dictionary of unique layer names for first dlc model
+    @param m2_unique_sorted: Dictionary of unique layer names for second dlc model
+    @param m1_total_macs: Total macs for first dlc model
+    @param m2_total_macs: Total macs for second dlc model
+    @param input_dlc_one: First DLC file name
+    @param input_dlc_two: Second DLC file name
+    """
+
+    # Number of unique layers for each model
+    m1_unique_len = 0
+    m2_unique_len = 0
+    for type, name_list in m1_unique_sorted.items():
+        m1_unique_len += len(name_list)
+    for type, name_list in m2_unique_sorted.items():
+        m2_unique_len += len(name_list)
+
+    # Output Table: General Differences
+    sideheader1 = 'Input Dimensions'
+    sideheader2 = 'Unique layers (different layer names)'
+    sideheader3 = 'Total MACs'
+    spaces = ' ' * max(len(sideheader1), len(sideheader2))
+    topheaders = [spaces, input_dlc_one, input_dlc_two]
+    col_sizes = [1 + len(header) for header in topheaders]
+
+    col_sizes[0] = max(col_sizes[0], 1 + 30)
+    col_sizes[1] = max(col_sizes[1], 1 + 30)
+    col_sizes[2] = max(col_sizes[2], 1 + 30)
+
+    total_size = 2 + 2 * len(col_sizes) - 1 + sum(col_sizes)
+    print('\nNote: Compares input dimensions, number of unique layers, and total macs')
+    print('-' * total_size)
+    print_row(topheaders, col_sizes)
+    print('-' * total_size)
+    print_row([sideheader1, m1_input_dims, m2_input_dims], col_sizes)
+    print_row([sideheader2, m1_unique_len, m2_unique_len], col_sizes)
+    print_row([sideheader3, get_si_notation(m1_total_macs, m1_total_macs),
+        get_si_notation(m2_total_macs, m2_total_macs)], col_sizes)
+    print('-' * total_size)
+    print('\n')
+
+
+def print_layers_table(m1_unique_sorted, m2_unique_sorted, input_dlc_one, input_dlc_two):
+    """
+    Layer Differences table that displays the unique layers for each model.
+    Outputs layers that are present in one model, and absent from the other.
+
+    @param m1_unique_sorted: Dictionary of unique layer names for first dlc model
+    @param m2_unique_sorted: Dictionary of unique layer names for second dlc model
+    @param input_dlc_one: First DLC file name
+    @param input_dlc_two: Second DLC file name
+    """
+
+    # Output Table: Layer Differences Table
+    sideheaders1 = list(m1_unique_sorted.keys())
+    sideheaders2 = list(m2_unique_sorted.keys())
+
+    topheaders = ['Id', 'Unique layers (organized by type)', input_dlc_one, input_dlc_two]
+    col_sizes = [1 + len(header) for header in topheaders]
+
+    # get the max length for the layer names to determine column size
+    if not m1_unique_sorted:
+        max_layer_name = max(list(map(len, m2_unique_sorted)))
+    elif not m2_unique_sorted:
+        max_layer_name = max(list(map(len, m1_unique_sorted)))
+    else:
+        max_layer_name = max(max(list(map(len, m1_unique_sorted))), max(list(map(len, m2_unique_sorted))))
+
+    col_sizes[0] = max(col_sizes[0], 6)
+    col_sizes[1] = max(max(col_sizes[1], 1 + max_layer_name), 1 + 40)
+    col_sizes[2] = max(col_sizes[2], 1 + 40)
+    col_sizes[3] = max(col_sizes[3], 1 + 40)
+
+    total_size = 2 + 2 * len(col_sizes) - 1 + sum(col_sizes)
+    print('\nNote: Displays layer differences between models, organized by layer type')
+    print('-' * total_size)
+    print_row(topheaders, col_sizes)
+    print('-' * total_size)
+
+    for type in sideheaders1:
+        print_row(['','type: ' + type, 'Present', 'Absent'], col_sizes)
+        for name_id_list in m1_unique_sorted.get(type):
+            print_row([name_id_list[1], ('(%s)' % (name_id_list[0])), '', ''], col_sizes)
+        print('-' * total_size)
+    for type in sideheaders2:
+        print_row(['','type: ' + type, 'Absent', 'Present'], col_sizes)
+        for name_id_list in m2_unique_sorted.get(type):
+            print_row([name_id_list[1], ('(%s)' % (name_id_list[0])), '', ''], col_sizes)
+        print('-' * total_size)
+    print('\n')
+
+def supports_color():
+    """
+    Returns True if the running system's terminal supports color, and False
+    otherwise.
+    """
+    plat = sys.platform
+    supported_platform = plat != 'Pocket PC' and (plat != 'win32' or
+                                                  'ANSICON' in os.environ)
+    is_a_tty = hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
+    if not supported_platform or not is_a_tty:
+        return False
+    return True
+
+def prCyan(skk):
+    """
+    Returns string in cyan color.
+    """
+    colored_skk ="\033[96m{}\033[00m".format(skk)
+    return colored_skk
+
+def prRed(skk):
+    """
+    Returns string in red color.
+    """
+    colored_skk = "\033[91m{}\033[00m" .format(skk)
+    return colored_skk
+
+def print_row_param_table(values, col_sizes, offset):
+    """
+    Print rows of paramter table to highlight varying param
+    values in a shared layer with color.
+    """
+    print('|', end=' ')
+    for value, size in zip(values, col_sizes):
+        if(value and value!=values[0] and value!=values[1] and supports_color):
+            value=prCyan(value)
+            size+=offset
+        print('{0:<{1}}|'.format(value, size), end=' ')
+    print()
+
+def print_parameters_table(m1_diff_parameters, m2_diff_parameters, input_dlc_one, input_dlc_two):
+    """
+    Parameter Differences table that compares parameter values
+    between the two models' shared layers. Outputs layers that
+    exhibit parameter differences, along with their parameter values.
+
+    @param m1_unique_sorted: Dictionary of shared layers with param differences
+                             for first dlc model
+    @param m2_unique_sorted: Dictionary of shared layers with param differences
+                             for second dlc model
+    @param input_dlc_one: First DLC file name
+    @param input_dlc_two: Second DLC file name
+    """
+
+    # Output Table: Parameter Differences Table
+    sideheaders = list(m1_diff_parameters.keys())
+    topheaders = ['Id', 'Identically Named Layers with Parameter Differences', input_dlc_one, input_dlc_two]
+    col_sizes = [1 + len(header) for header in topheaders]
+
+    # find column sizes based on longest columns
+    params1_max = 0
+    params2_max = 0
+    for layer_names, params1 in m1_diff_parameters.items():
+        if params1[0]:
+            params1_max =  max(params1_max, max(list(map(len, params1[0]))))
+    for layer_names, params2 in m2_diff_parameters.items():
+        if params2[0]:
+            params2_max =  max(params2_max, max(list(map(len, params2[0]))))
+
+    col_sizes[0] = max(col_sizes[0], 6)
+    col_sizes[1] = max(max(col_sizes[1], max(list(map(len, m1_diff_parameters)))), 1 + 40)
+    col_sizes[2] = max(max(col_sizes[2], 1 + params1_max), 1 + 40)
+    col_sizes[3] = max(max(col_sizes[3], 1+ params2_max), 1 + 40)
+
+    total_size = 2 + 2 * len(col_sizes) - 1 + sum(col_sizes)
+
+    print('\nNote: Displays parameter differences between identically named layers')
+    print('-' * total_size)
+    print_row(topheaders, col_sizes)
+    print('-' * total_size)
+
+    for name in sideheaders:
+        m1_params = m1_diff_parameters.get(name)[0]
+        m2_params = m2_diff_parameters.get(name)[0]
+        m1_ids = m1_diff_parameters.get(name)[1]
+        m2_ids = m2_diff_parameters.get(name)[1]
+
+        offset=len(prCyan("hello"))-len("hello")
+        # loop through the first models parameters
+        for m1_param in m1_params:
+                if m1_param in m2_params:
+                    # print same parameters
+                    print_row([m1_ids, name, m1_param, m1_param], col_sizes)
+                    m2_params.remove(m1_param)
+                    name = '' # only needs to get printed once
+                    m1_ids=''; m2_ids=''
+                else:
+                    m1_param_key = m1_param.split(":")[0] + ":"
+                    if m1_param_key in  '\t'.join(m2_params):
+                        # print modified parameters
+                        index_in_param2 = [m2_params.index(m2_param) for m2_param in m2_params if m1_param_key in m2_param]
+                        print_row_param_table([m2_ids, name, '*' + m1_param, m2_params[index_in_param2[0]]], col_sizes, offset)
+                        m2_params.remove(m2_params[index_in_param2[0]])
+                        name = ''
+                        m1_ids=''; m2_ids=''
+                    else:
+                        # print new parameters in model1
+                        print_row_param_table([m1_ids, name, '*' + m1_param, ''], col_sizes, offset)
+                        name = '';
+                        m1_ids=''; m2_ids=''
+        # print what is left in second model's parameter list
+        for m2_param in m2_params:
+            print_row_param_table([m2_ids, name,'', '*' + m2_param], col_sizes, offset)
+
+        print('-' * total_size)
+
+    print('\n')
+
+def print_dimensions_table(m1_diff_dimensions, m2_diff_dimensions, input_dlc_one, input_dlc_two):
+    """
+    Dimension Differences table that compares dimensions
+    between the two models' shared layers. Outputs layers that
+    exhibit dimensions differences, along with their dimension values.
+
+    @param m1_unique_sorted: Dictionary of shared layers with dimensions differences
+                             for first dlc model
+    @param m2_unique_sorted: Dictionary of shared layers with dimensions differences
+                             for second dlc model
+    @param input_dlc_one: First DLC file name
+    @param input_dlc_two: Second DLC file name
+    """
+
+    # Output Table: Dimension Differences Table
+    sideheaders = list(m1_diff_dimensions.keys())
+    topheaders = ['Id', 'Identically Named Layers with Dimension Differences', input_dlc_one, input_dlc_two]
+    col_sizes = [1 + len(header) for header in topheaders]
+
+    # find column sizes based on longest columns
+    dims1_max = 0
+    dims2_max = 0
+    for layer_names, dims1 in m1_diff_dimensions.items():
+        if dims1[0]:
+            dims1_max =  max(dims1_max, max(list(map(len, dims1[0]))))
+    for layer_names, dims2 in m2_diff_dimensions.items():
+        if dims2[0]:
+            dims2_max =  max(dims2_max, max(list(map(len, dims2[0]))))
+
+    col_sizes[0] = max(col_sizes[0], 6)
+    col_sizes[1] = max(max(col_sizes[1], max(list(map(len, m1_diff_dimensions)))), 1 + 40)
+    col_sizes[2] = max(max(col_sizes[2], 1 + dims1_max), 1 + 40)
+    col_sizes[3] = max(max(col_sizes[3], 1+ dims2_max), 1 + 40)
+
+    total_size = 2 + 2 * len(col_sizes) - 1 + sum(col_sizes)
+
+    print('\nNote: Displays dimension differences between identically named layers')
+    print('-' * total_size)
+    print_row(topheaders, col_sizes)
+    print('-' * total_size)
+
+    for name in sideheaders:
+        m1_dims = m1_diff_dimensions.get(name)[0]
+        m2_dims = m2_diff_dimensions.get(name)[0]
+        layer_id = m1_diff_dimensions.get(name)[1]
+        for m1_dim, m2_dim in zip(m1_dims, m2_dims):
+            m1_dim = 'x'.join(map(str, m1_dim))
+            m2_dim = 'x'.join(map(str, m2_dim))
+            print_row([layer_id, name, m1_dim, m2_dim], col_sizes)#
+
+        print('-' * total_size)
+
+    print('\n')
+
+
+def print_weights_table(diff_weights):
+    """
+    Weight Differences table that compares weights between
+    corresponding layers of the two models. Outputs layers
+    that exhibit weight differences.
+
+    NOTE: Comparison is only done for models with same architectures
+    i.e. identical layers names/types, and parameters
+
+    @param diff_weights: List of layer names that exhibit weight differences
+                         between the two dlc models
+    """
+
+    # Output Table: Weight Differences Table
+    topheaders = ['Id', 'Identical Layers with Weight Differences']
+    col_sizes = [1 + len(header) for header in topheaders]
+    col_sizes[0] = max(col_sizes[0], 6)
+    col_sizes[1] = max(col_sizes[1], 1 + 40)
+
+    total_size = 2 + 2 * len(col_sizes) - 1 + sum(col_sizes)
+    print('\nNote: Displays the layers that have weight differences ' \
+          '(for models with same layer names, types, and parameters)')
+    print('-' * total_size)
+    print_row(topheaders, col_sizes)
+    print('-' * total_size)
+
+    for name_id_list in diff_weights:
+        print_row([name_id_list[1],name_id_list[0]], col_sizes)
+    print('-' * total_size)
+    print('\n')
+
+
+def display_dlc_differences(m1, m2, args):
+    """
+    Captures the "difference" results from model comparison functions above.
+
+    Based on these results and command line arguments provided by the user,
+    outputs informative messages or "difference" tables.
+
+    Determines which help messages to provide the user
+    (e.g. See --parameters for more details)
+
+    @param m1: First DLC model
+    @param m2: Second DLC model
+    @param args: arguments from the user
+    """
+
+    # Retrieve base names of DLC files
+    dlc_one_base = os.path.splitext(os.path.basename(args.input_dlc_one))[0]
+    dlc_two_base = os.path.splitext(os.path.basename(args.input_dlc_two))[0]
+
+    # Input dimensions for Models 1 and 2
+    m1_input_dims = m1.get_input_dims()
+    m2_input_dims = m2.get_input_dims()
+
+    # Total MACs for MOdels 1 and 2
+    m1_total_macs = m1.get_total_macs()
+    m2_total_macs = m2.get_total_macs()
+
+
+
+    ### Capture layer, parameter and dimension information ###
+
+    # Return from layer, param and dimension comparisons
+    layer_comparison_result = compare_layers_by_name(m1, m2)
+    parameter_comparison_result = compare_layers_by_parameters(m1, m2)
+    dimension_comparison_result = compare_layers_by_dimensions(m1, m2)
+
+    # Truth value that represents how Models 1 and 2 are related (True if they are the same)
+    layers_same = layer_comparison_result[0]
+
+    parameters_same = parameter_comparison_result[0]
+
+    dimensions_same = dimension_comparison_result[0]
+
+    # Dictionary of layers that exhibit differences between Models 1 and 2
+    [m1_unique_sorted, m2_unique_sorted] = layer_comparison_result[1]
+    [m1_diff_parameters, m2_diff_parameters] = parameter_comparison_result[1]
+    [m1_diff_dimensions, m2_diff_dimensions] = dimension_comparison_result[1]
+
+    # Info message from comparison
+    layers_message = layer_comparison_result[2]
+    parameters_message = parameter_comparison_result[2]
+    dimensions_message = dimension_comparison_result[2]
+    # Total number of shared layers
+    param_shared_layers=parameter_comparison_result[3]
+    # Total layers with param differences
+    param_diff_layers=len(list(m1_diff_parameters.keys()))
+    if param_diff_layers==0: param_diff_layers='none'
+    if param_diff_layers==param_shared_layers: param_diff_layers='all'
+    # Total number of shared layers
+    dim_shared_layers=dimension_comparison_result[3]
+    # Total layers with dim differences
+    dim_diff_layers=len(list(m1_diff_dimensions.keys()))
+    if dim_diff_layers==0: dim_diff_layers='none'
+    if dim_diff_layers==dim_shared_layers: dim_diff_layers='all'
+
+    ### Capture weight information ###
+    # Return from weight comparison. If layers are not identical, weight comparison is not calculated.
+    if layers_same:
+        weight_comparison_result = compare_layers_by_weights(m1,m2)
+    else:
+        weight_comparison_result = [None, None, None]
+
+    # Truth value that represents how Models 1 and 2 are related (True if weights are the same)
+    weights_same = weight_comparison_result[0]
+
+    # List of layers that exhibit weight differences between Models 1 and 2
+    diff_weights = weight_comparison_result[1]
+    if (diff_weights is not None):
+        # Total layers with weights differences
+        weight_diff_layers=len(diff_weights)
+        if weight_diff_layers==0: weight_diff_layers='none'
+        if weight_diff_layers==dim_shared_layers: weight_diff_layers='all'
+    else:
+        weight_diff_layers=None
+
+    # Info message from weight comparison
+    weights_message = weight_comparison_result[2]
+
+    # Check if weights are identical. If so, DLCs are the same.
+    if (layers_same and parameters_same and dimensions_same and weights_same):
+        print("Note: DLCs are the same")
+    else:
+        table_title('General Table')
+        print_general_table(m1_input_dims, m2_input_dims, m1_unique_sorted, m2_unique_sorted,
+            m1_total_macs, m2_total_macs, dlc_one_base, dlc_two_base)
+        print('Info: Try --layers, --parameters, --dimensions and/or --weights for more details. See --help ' \
+              'for more info\n')
+
+        if args.layers:
+            table_title('Layer Differences')
+            # Check if models have unique layers
+            if layers_same is False:
+                print_layers_table(m1_unique_sorted, m2_unique_sorted, dlc_one_base,
+                    dlc_two_base)
+            else:
+                print(layers_message)
+
+        if args.parameters:
+            table_title('Parameter Differences')
+            if(param_shared_layers):
+                print("Out of",param_shared_layers,"shared layers,",param_diff_layers,"exhibit parameter differences")
+            # Check if shared layers have parameter differences
+            if parameters_same is False:
+                print_parameters_table(m1_diff_parameters, m2_diff_parameters, dlc_one_base,
+                    dlc_two_base)
+            else:
+                print(parameters_message)
+            # Reset boolean value to None to prevent 'see parameters' help message
+            layers_same = None
+
+        if args.dimensions:
+            table_title('Dimension Differences')
+            if(dim_shared_layers):
+                print("Out of",dim_shared_layers,"shared layers,",dim_diff_layers,"exhibit dimension differences")
+            # Check if shared layers have dimension differences
+            if dimensions_same is False:
+                print_dimensions_table(m1_diff_dimensions, m2_diff_dimensions, dlc_one_base,
+                    dlc_two_base)
+            else:
+                print(dimensions_message)
+            # Reset boolean value to None to prevent 'see dimensions' help message
+            layers_same = None
+
+        if args.weights:
+            table_title('Weight Differences')
+            # Check if corresponding layers have weight differences
+            if weights_same is False:
+                print_weights_table(diff_weights)
+            elif weights_same is True:
+                print(weights_message)
+            else:
+                print('\nWarning:: Model 1 and Model 2 have different architectures. Weights are not comparable.\n')
+            # Reset boolean values to None to prevent 'see weights' help message
+            layers_same = None
+            weights_same = None
+            dimensions_same=None
+            parameters_same=None
+
+        # Outputs a help message for user based on boolean values from comparison functions
+
+
+        if(not args.layers):
+            if layers_same is False:
+                print(prRed('Info: Layer differences found. See --layers for more details')+'\n')
+        if(not args.parameters):
+            if parameters_same is False:
+                print(prRed('Info: Parameter differences found. See --parameters for more details')+'\n')
+        if(not args.dimensions):
+            if dimensions_same is False:
+                print(prRed('Info: Dimension differences found. See --dimensions for more details')+'\n')
+        if(not args.weights):
+            if weights_same is False:
+                print(prRed('Info: Weight differences found. See --weights for more details')+'\n')
+        pass
+
+def main():
+    try:
+        parser = argparse.ArgumentParser()
+        required = parser.add_argument_group('required arguments')
+        required.add_argument('-i1', '--input_dlc_one', required=True, type=str, help="path to the first"
+                                                                                     " dl container archive")
+        required.add_argument('-i2', '--input_dlc_two', required=True, type=str, help="path to the second"
+                                                                                      " dl container archive")
+        parser.add_argument("-l", "--layers", action="store_true", help="compare unique layers between models")
+        parser.add_argument("-p", "--parameters", action="store_true", help="compare parameter differences "
+                                                                            "between identically named layers")
+        parser.add_argument("-d", "--dimensions", action="store_true", help="compare dimension differences "
+                                                                            "between identically named layers")
+        parser.add_argument("-w", "--weights", action="store_true", help="compare layer-by-layer weight differences"
+                                                                         " between models (with same architecture)")
+        args = parser.parse_args()
+
+        snpeUtils = snpe_utils.SNPEUtils()
+        snpeUtils.setUpLogger(True)
+
+        m1 = snpe_dlc_utils.ModelInfo()
+        m2 = snpe_dlc_utils.ModelInfo()
+
+        logger = logging.getLogger()
+        if not os.path.exists(args.input_dlc_one):
+            logger.debug("Cannot find archive DLC file " + args.input_dlc_one)
+            sys.exit(-1)
+        if not os.path.exists(args.input_dlc_two):
+            logger.debug("Cannot find archive DLC file " + args.input_dlc_two)
+            sys.exit(-1)
+
+        # Loads input dlc files and extracts model information layer by layer
+        m1.extract_model_info(args.input_dlc_one)
+        m2.extract_model_info(args.input_dlc_two)
+
+        display_dlc_differences(m1, m2, args)
+
+    except Exception as e:
+        print(e)
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,161 @@
+SNPE SDK
+
+SNPE is a software development kit for building machine learning based applications.
+
+SNPE 1.21.0
+
+Dependencies:
+
+* for converter tools
+  * Ubuntu 14.04
+  * Python 2.7
+* for building Android example build
+  * optional Android NDK (android-ndk-r14b-linux-x86)
+  * optional Android SDK (sdk version 23 and build tools version 23.0.2)
+  * Java 8 JDK
+* for Android platforms
+  * libgnustl_shared.so android native library for armeabi-v7a platform (obtained from android ndk)
+* for Linux Embedded (LE) platform
+  * libatomic.so.1
+
+Contents:
+
+* Model conversion tools to convert trained models from Caffe and TensorFlow to SNPE DLC format
+* SNPE neural network accelerated runtime
+* Sample Native C++ and Android applications
+* SNPE C++ library x86_64-linux-clang, arm-android-gcc4.9, arm-linux-gcc4.9sf, aarch64-linux-gcc4.9
+* Android archive (aar) to facilitate Android application integration using SNPE
+* Snapdragon Neural Processing Engine SDK Reference Guide
+
+Known Issues:
+
+* Please refer to the "Limitations and Issues" chapter of the SNPE User and Reference Guide
+
+Changelog:
+1.21.0
+* Tensorflow converter and CPU runtime support for various ops
+* DSP runtime support for Eltwise Realdiv and Square ops
+* GPU support for resize_align_corners layer
+
+Changelog:
+1.20.0
+* Support for QCS605 LE platform
+* NDK version upgrade to r14b
+* Tensorflow converter support for eltwise sqrt and softmax with dimension > 2
+* Platform validation command line tool
+
+Changelog:
+1.19.0
+* ELU op support for Tensorflow/Onnx Converters and CPU/GPU runtimes
+* BoxWithNMSLimit and BBoxTransform ops support in caffe2 converter
+* Support for Caffe Power Layer in GPU
+
+Changelog:
+1.18.0
+* Support for tensorflow pad, elementwise subtraction on GPU
+* ONNX converter support for shape and pad ops
+* Tensorflow converter support for argmax, channel shuffle and elementwise subtraction ops
+
+Changelog:
+1.17.0
+* Support for Scale Layer in Caffe converter and DSP runtime
+* DSP support for batch>1 and ChannelShuffle
+* Updated SDK examples for Inception v3 2016 model
+
+1.16.2
+* Remove linkage to libstdc++.so in DSP loader libraries
+
+1.16.1
+* Add note regarding upgrading from previous SDKs to 1.16
+* DSP runtime fixes
+* Fix axis-tracking for 1D BatchNorm
+* Remove linking to libstdc++.so shared library
+
+1.16.0
+* Add Caffe2 ChannelShuffle layer support for CPU and GPU runtimes
+* Add Inception v3 model to Android application example
+* Add layer optimizations for Sigmoid, BatchNorm and Instance Norm on DSP
+* Support for batch>1 in Caffe, Caffe2, ONNX and TensorFlow converters
+* Support for batch>1 in CPU and GPU runtimes
+* Sustained high performance mode for DSP runtime
+
+1.15.2
+* Fix for GPU runtime memory leak
+* Fix for GPU reshape to/from 1D
+
+1.15.1
+* Fix for instance normalization followed by scale
+
+1.15.0
+* Support for instance normalization for Caffe and Caffe2
+* Support for MobilenetSSD (Caffe)
+
+1.14.1
+* Minor Fixes
+
+1.14.0
+* ONNX converter (alpha), multiple enhancements and fixes
+
+1.13.0
+* GPU and DSP v65 improvements, GPU floating point 16 support.
+
+1.12.0
+* Support for Android LLVM/libc++, MobilenetSSD (TensorFlow)
+
+1.10.2
+* Fix a bug for GPU runtime
+
+1.10.1
+* Bug fix for mixed userbuffer input types for DSP runtime
+
+1.10.0
+* Support for Mobilenet on DSP
+* Added enhanced DSP runtime
+* Support for Snapdragon Flight Board
+* Updates for UserBuffers
+
+1.8.0
+* Mobilenet support on CPU,GPU
+* Support for Snapdragon 636
+* Android 64 bit support
+
+1.6.0
+* Support for Snapdragon 450 - CPU, GPU
+
+1.4.0
+* Support for Snapdragon 630 - CPU, GPU
+* Support for FasterRCNN - CPU, DSP
+* Support for 820 AGL platform - ADSP
+
+1.2.2
+* QDN Release
+
+1.2.0
+* Beta Caffe2 converter
+
+1.0.2
+* Support for Snapdragon 660 - CPU, GPU, CDSP
+* Support for 820 AGL platform - CPU, GPU
+
+1.0.1
+* Updated documentation
+
+1.0.0
+* Official TensorFlow conversion support
+* DSP runtime support
+* New dlc-quantize tool
+* API changes (non-backwards compatible changes were made)
+* DLC files created prior to 1.0 release need to be regenerated
+
+0.11.0
+* Added support for rectangular filters in Convolution and Pooling layer
+* Added support for group parameter in Deconvolution layer
+* Added new layers: Slice
+* Removed core affinity setting in engine
+* Added tensorflow converter
+* Added Linux Embedded (LE) soft float support which has been tested on yocto distribution
+* DLC files created prior to 0.7.0 release need to be regenerated
+
+0.7.0
+* Added new layers: Batchnorm + scale, Crop, Pre-processing
+* Removed SNPEFactory::CreateInstance version using model buffer

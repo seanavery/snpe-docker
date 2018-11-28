@@ -1,0 +1,16 @@
+#!/usr/bin/env python
+# -*- mode: python -*-
+#==============================================================================
+#
+#  Copyright (c) 2018 Qualcomm Technologies, Inc.
+#  All Rights Reserved.
+#  Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+#==============================================================================
+
+from converters import onnx as onnx_converter
+
+if __name__ == '__main__':
+    args = onnx_converter.parse_args()
+    converter = onnx_converter.OnnxConverter()
+    converter(args)

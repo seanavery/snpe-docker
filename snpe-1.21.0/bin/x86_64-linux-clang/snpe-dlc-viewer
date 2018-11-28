@@ -1,0 +1,212 @@
+#!/usr/bin/env python
+# -*- mode: python -*-
+#=============================================================================
+#
+#  Copyright (c) 2018 Qualcomm Technologies, Inc.
+#  All Rights Reserved.
+#  Confidential and Proprietary - Qualcomm Technologies, Inc.
+#
+#=============================================================================
+
+import argparse
+import json
+import logging
+import os
+import subprocess
+import sys
+import time
+import webbrowser
+# set encoding to utf8
+reload(sys)
+sys.setdefaultencoding('utf8')
+
+try:
+    from snpe import snpe_dlc_utils
+    from snpe import snpe_utils
+except ImportError as ie:
+    print("Failed to find necessary package:")
+    print(str(ie))
+    print("Please ensure that $SNPE_ROOT/lib/python is in your PYTHONPATH")
+    sys.exit(1)
+
+get_si_notation = snpe_dlc_utils.get_si_notation
+
+def model_info_to_graph_info(rows_all, total_macs, total_params):
+    """
+    Assigns layer names as nodes (or vertices) in the model.
+    Assigns connections between layer names and their input/output layers
+    as links (or edges).
+    """
+
+    # List that will store dictionaries of layer names and their parameters
+    nodes = []
+
+    # List that will store directionaries of links between layers and their input/output layers
+    links = []
+
+    for row in rows_all:
+
+        out_names_list = []
+        for out_name in row.output_names:
+            out_names_list.append(out_name)
+
+        in_names_list = []
+        for in_name in row.input_names:
+            in_names_list.append(in_name)
+
+        # Get parameter values for the layer
+        m = max(len(row.get_parm_list()), len(row.get_input_list()))
+        m = max(m,len(row.get_output_list()))
+        parms = []
+
+        # Get ID and output dimensions of layer as a string
+        dims_len = len(row.output_dims_list[0])
+        dims = ''
+        for index in range(dims_len - 1):
+            dims = dims + str(row.output_dims_list[0][index]) + 'x'
+        dims = dims + str(row.output_dims_list[0][dims_len - 1])
+        parms.append('ID: ' + str(row.id))
+        parms.append('<br/>Output Dims: ' + dims)
+        for i in range(0,m):
+            if row.get_parm(i):
+                parms.append('<br/>'+row.get_parm(i))
+
+        # Get param_count per inference if it exists
+        param_count = row.get_num_params()
+        if param_count>0:
+            parms.append('<br/>param count '+ get_si_notation(param_count, total_params))
+        # Get MACs per inference if it exists
+        macs = row.get_macs()
+        if macs>0:
+            parms.append('<br/>MACs per inference '+ get_si_notation(macs, total_macs))
+        # Create a node for the layer
+        nodes.append({'name':row.name, 'parameters':parms, 'type': row.type})
+        for out_name in out_names_list:
+            # To avoid self loop
+            if out_name != row.name:
+                links.append({"source":row.name, "target":out_name, 'dummy':row.name})
+        for in_name in in_names_list:
+            # To avoid self loop
+            if in_name != row.name:
+                links.append({"source":in_name, "target":row.name})
+
+    return nodes, links
+
+def main():
+    parser = argparse.ArgumentParser()
+    required = parser.add_argument_group('required arguments')
+    required.add_argument('-i', '--input_dlc', required=True, type=str, help="Path to a dl container archive")
+    parser.add_argument("-s", "--save", type=str, help="Save HTML file. Specify a file name and/or target save path")
+    args = parser.parse_args()
+
+    snpeUtils = snpe_utils.SNPEUtils()
+    snpeUtils.setUpLogger(True)
+
+    logger = logging.getLogger()
+    if not os.path.exists(args.input_dlc):
+        logger.error("Cannot find archive DLC file " + args.input_dlc)
+        sys.exit(-1)
+
+    # Load input dlc file and extract model information layer by layer
+    m = snpe_dlc_utils.ModelInfo()
+    rows_all = m.extract_model_info(args.input_dlc)
+
+    total_params = 0
+    total_macs = 0
+    for row in rows_all:
+        total_params += row.get_num_params()
+        total_macs += row.get_macs()
+    # Add method to ModelInfo class
+    nodes, links = model_info_to_graph_info(rows_all, total_macs, total_params)
+    # get meta-data from ModelInfo class
+    (model_version, total_params, total_macs, converter_command,
+    converter_version) = m.get_meta_data(total_params, total_macs, args.input_dlc)
+    input_file_path = os.path.abspath(args.input_dlc)
+
+    # Set path to location of the script, rather than current working directory
+    filepath = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+    # Set path of the shared directory
+
+    if(os.path.exists(os.path.abspath(os.path.join(filepath, '..', '..','share', 'dlcviewer')))):
+      sharedpath = os.path.abspath(os.path.join(filepath, '..', '..','share', 'dlcviewer'))
+    elif(os.path.exists(os.path.abspath(os.path.join(filepath, '..','share', 'dlcviewer')))):
+      sharedpath = os.path.abspath(os.path.join(filepath, '..','share', 'dlcviewer'))
+    else:
+        logger.error("Failed to access the dependency packages in share location.")
+        sys.exit(-1)
+    # Retrieve name of DLC file
+    modelname = os.path.splitext(os.path.basename(args.input_dlc))[0]
+
+    # Read in viewer template
+    with open(os.path.abspath(os.path.join(sharedpath, 'snpe_dlc_viewer_template.html')), 'r') as file :
+      filedata = file.read()
+    # Load in all the required dependencies from shared path
+    with open(os.path.join(sharedpath, 'index.js'), 'r') as file :
+      index = file.read()
+    with open(os.path.join(sharedpath, 'graphlib.core.min.js'), 'r') as file :
+      graphlib = file.read()
+    with open(os.path.join(sharedpath, 'd3.min.js'), 'r') as file :
+      d3_min = file.read()
+    with open(os.path.join(sharedpath, 'dagre-d3.min.js'), 'r') as file :
+      dagre_d3 = file.read()
+    with open(os.path.join(sharedpath, 'dagre.core.min.js'), 'r') as file :
+      dagre_core = file.read()
+    with open(os.path.join(sharedpath, 'tipsy.css'), 'r') as file :
+      tipsy_css = file.read()
+    with open(os.path.join(sharedpath, 'jquery-1.9.1.min.js'), 'r') as file :
+      jquery = file.read()
+    with open(os.path.join(sharedpath, 'jquery.tipsy.js'), 'r') as file :
+      tipsy_js = file.read()
+
+    # Replace target strings with nodes and links info
+    filedata = filedata.replace('??nodes??', '%s' % json.dumps(nodes))
+    filedata = filedata.replace('??links??', '%s' % json.dumps(links))
+    # Replace target strings with meta-data
+    filedata = filedata.replace('??total_params??', '%s' % total_params)
+    filedata = filedata.replace('??total_macs??', '%s' % total_macs)
+    filedata = filedata.replace('??model??', '%s' % input_file_path)
+    filedata = filedata.replace('??model_version??', '%s' % model_version)
+    filedata = filedata.replace('??converter_command??', '%s' % converter_command)
+    filedata = filedata.replace('??converter_version??', '%s' % converter_version)
+    # Replace target strings with dependencies for portability
+    filedata = filedata.replace('??index.js??', '%s' % index)
+    filedata = filedata.replace('??graphlib.core.js??', '%s' % graphlib)
+    filedata = filedata.replace('??d3.min.js??', '%s' % d3_min)
+    filedata = filedata.replace('??dagre-d3.min.js??', '%s' % dagre_d3)
+    filedata = filedata.replace('??dagre.core.js??', '%s' % dagre_core)
+    filedata = filedata.replace('??tipsy.css??', '%s' % tipsy_css)
+    filedata = filedata.replace('??jquery-1.9.1.min.js??', '%s' % jquery)
+    filedata = filedata.replace('??tipsy.js??', '%s' % tipsy_js)
+
+    html_out = ""
+    if args.save:
+        save_html = args.save
+        if(save_html.endswith('.html')):
+            if '/' in save_html:
+                # Fully qualified file-path
+                html_out = os.path.join(os.path.abspath(save_html.rpartition('/')[0]), save_html.rpartition('/')[-1])
+            else:
+                # Only filename specified; append CWD path
+                html_out = os.path.join(os.getcwd(), save_html)
+        else:
+            # Only path specified; append file name taken from model name
+            html_out = os.path.join(os.path.abspath(save_html), '%s.html' %modelname)
+    else:
+        # No specifications provided; store file at a temporary location for rendering
+        render_path = os.path.abspath('/tmp/')
+        html_out = os.path.join(render_path, '%s.html' %modelname)
+
+    print("Network Model HTML file saved at %s" % html_out)
+    # Write out to an HTML file, specific to DLC name
+    try:
+      with open(html_out, 'w') as f:
+          f.write(filedata)
+    except IOError:
+        logger.error("IOError: Cannot write HTML file " + html_out)
+        sys.exit(-1)
+
+    # Open HTML in browser in try order
+    webbrowser.open('file://'+os.path.abspath(html_out))
+
+if __name__ == "__main__":
+    main()

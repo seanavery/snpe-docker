@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<!--
+//=============================================================================
+//
+//  Copyright (c) 2017-2018 Qualcomm Technologies, Inc.
+//  All Rights Reserved.
+//  Confidential and Proprietary - Qualcomm Technologies, Inc.
+//
+//=============================================================================
+-->
+<meta charset="utf-8">
+<body>
+<script>??index.js??</script>
+<script>??graphlib.core.js??</script>
+<script>??d3.min.js??</script>
+<script>??dagre-d3.min.js??</script>
+<script>??dagre.core.js??</script>
+<style>??tipsy.css??</style>
+<script>??jquery-1.9.1.min.js??</script>
+<script>??tipsy.js??</script>
+
+<h2><center>DLC Viewer</center></h2>
+<p>DLC file Path: ??model??
+</br>??model_version??
+</br>??total_params??
+</br>??total_macs??
+</br>??converter_command??
+</br>??converter_version??</p>
+
+<style id="css">
+
+body {
+  width: 1500px;
+  margin: 0 auto;
+  color: #333;
+  font-weight: 300;
+  background-color: linen;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serf;
+}
+
+h1 {
+  font-size: 3em;
+  font-weight: 300;
+}
+
+h2 {
+  font-size: 1.5em;
+  font-weight: 300;
+}
+
+section {
+  margin-bottom: 3em;
+}
+
+section p {
+  text-align: justify;
+}
+
+svg {
+  width: 1500px;
+  border: 5px solid #ccc;
+  overflow: hidden;
+  margin: 0 auto;
+}
+
+pre {
+  border: 1px solid #ccc;
+}
+
+text {
+  font-weight: 400;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serf;
+  font-size: 30px;
+}
+.node rect {
+  stroke: #333;
+  fill: #fff;
+}
+
+.edgePath path {
+  stroke: #333;
+  stroke-width: 1.5px;
+  stroke-length: 5px;
+}
+.node text {
+  pointer-events: none;
+}
+/* This styles the title of the tooltip */
+.tipsy .name {
+  font-size: 2.5em;
+  font-weight: 600;
+  background-color: saddlebrown;
+  color: white;
+  margin: 0;
+  padding: 1px;
+}
+/* This styles the body of the tooltip */
+.tipsy .description {
+  font-size: 2em;
+  font-weight: 400;
+  color: saddlebrown;
+  margin: 0 !important;
+  padding: 5px;
+  text-align: left;
+}
+.tipsy-inner {
+  background-color: white;
+  max-width: 800px;
+  padding: 0;
+  text-align: left !important;
+}
+
+.legend rect {
+  fill:white;
+  stroke:black;
+  opacity:0.8;
+}
+
+
+</style>
+
+<svg width=1500 height=600></svg>
+
+<script id="js">
+
+// Create the input graph
+var g = new dagreD3.graphlib.Graph().setGraph({})
+
+// Populate nodes and links info from dlc-viewer script
+nodes = JSON.parse('??nodes??');
+links = JSON.parse('??links??');
+
+
+// Create a map to store type and color info
+var type_color = new Map()
+
+// Add colors to queue
+var colors = [];
+colors.push("#ffb3b3", "#ff3333","#ffb366", "#80ffaa", "#59b300", "#99ccff", "#0080ff", "#cc80ff",
+"#ff4dff", "#b3b3b3", "#bf8040", "#ffe119", "#d2f53c", "#e6beff", "#40e5e5", "#d65c7e");
+var max_color = colors.length;
+nodes.forEach(function(data) {
+  // Check that layer has a type
+  if (data.type !== undefined) {
+
+    // If map does not contain a type, dequeue a color and add the type-color pair to map
+    if (!type_color.has(data.type)) {
+      if (colors.length !== 0) {
+        var c = colors.shift()
+        type_color.set(data.type, c)
+      }
+      else {
+        console.log('Legend requires more than ',max_color,' colors. Add more colors')
+      }
+    }
+  }
+
+// Add nodes to graph
+var value = {description: data.parameters, style: 'fill: ' + type_color.get(data.type)}
+var char_limit = 30
+// If layer name exceeds 30 characters, it is truncated
+  if(data.name.length<char_limit){
+  value.label = data.name
+  }
+  else{
+    value.label = data.name.substr(0,char_limit-1).concat('..')
+  }
+  value.rx = value.ry = 5;
+  g.setNode(data.name, value)
+});
+
+var dummy_list = []
+// Add links to graph
+links.forEach(function(data) {
+  if(data.dummy){
+    // input and output buffer nodes are pushed into dummy_list
+    dummy_list.push(data);
+    return;
+  }
+
+  var count = dummy_list.length;
+  for(var i=0; i<count; i++){
+    // if source node is the buffer nodes, it is replaced by it's source node. i.e. the layer node.
+    if(data.source==dummy_list[i].target){
+      g.setEdge(dummy_list[i].source, data.target, {label: ""})
+      return;
+    }
+  }
+  g.setEdge(data.source, data.target, {label: ""})
+});
+
+// Create the renderer
+var render = new dagreD3.render();
+
+// Set up an SVG group so that we can translate the final graph.
+var svg = d3.select("svg"),
+      inner = svg.append("g");
+
+// Get the contents (type, color) for the legend
+var domain_vals = []
+var range_vals = []
+type_color.forEach(function(color, type, map) {
+  domain_vals.push(type)
+  range_vals.push(color)
+});
+domain_vals.push('type not defined')
+range_vals.push('white')
+
+// Add legend contents to domain and range values
+var color = d3.scale.ordinal()
+    .domain(domain_vals)
+    .range(range_vals);
+
+// Generate legend and shift to left-hand corner of Viewer
+var legendRectSize = 18;
+var legendSpacing = 4;
+
+var legend = d3.select('svg')
+    .append("g")
+    .selectAll("g")
+    .data(color.domain())
+    .enter()
+    .append('g')
+      .attr('class', 'legend')
+      .attr('transform', function(d, i) {
+        var legendHeight = legendRectSize;
+        var horz = 1;
+        var vert = i * legendHeight;
+        return 'translate(' + horz + ',' + vert + ')';
+    });
+
+legend.append('rect')
+    .attr('width', legendRectSize)
+    .attr('height', legendRectSize)
+    .style('fill', color)
+    .style('stroke', color);
+
+legend.append('text')
+    .attr('x', legendRectSize + legendSpacing)
+    .attr('y', legendRectSize - legendSpacing)
+    .style("font-size","20px")
+    .text(function(d) { return d; });
+
+// Set up zoom support
+var zoom = d3.behavior.zoom().on("zoom", function() {
+    inner.attr("transform", "translate(" + d3.event.translate + ")" +
+                                "scale(" + d3.event.scale + ")");
+  });
+svg.call(zoom);
+
+// Simple function to style the tooltip for the given node.
+var styleTooltip = function(name, description) {
+  return "<p class='name'>" + name + "</p><p class='description'>" + description + "</p>";
+};
+
+// Run the renderer. This is what draws the final graph.
+render(inner, g);
+
+inner.selectAll("g.node")
+  .attr("title", function(v) { return styleTooltip(v, g.node(v).description) })
+  .each(function(v) { $(this).tipsy({ gravity: "w", opacity: 1, html: true }); });
+
+// Center the graph
+var initialScale = 0.75;
+zoom
+  .translate([(svg.attr("width") - g.graph().width * initialScale) / 2, 20])
+  .scale(initialScale)
+  .event(svg);
+svg.attr('height', g.graph().height * initialScale + 40);
+</script>

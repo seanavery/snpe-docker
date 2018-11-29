@@ -1,32 +1,21 @@
 # go from base ubuntu image v 14.04
 
-FROM ubuntu:14.04
+FROM ubuntu:18.04
 
-COPY snpe-1.21.0/ /snpe-1.21.0/
-
-# lets cover our bases
+# the greate update
 RUN apt-get update
+RUN apt-get install -y wget
 
-# install os dependencies
-# woah snpe does it for us...
+# 1. install java 
+RUN apt-get install -y openjdk-8-jdk
 
-# install neural processing sdk dependencies
-RUN ["chmod",  "+x", "snpe-1.21.0/bin/dependencies.sh"]
-RUN ["snpe-1.21.0/bin/dependencies.sh"]
-RUN ["chmod", "+x", "snpe-1.21.0/bin/check_python_depends.sh"]
-RUN ["snpe-1.21.0/bin/check_python_depends.sh"]
+# 2. install android sdk
+RUN wget https://dl.google.com/android/repository/sdk-tools-linux-4333796.zip
+RUN apt-get install unzip
+RUN unzip sdk-tools-linux-4333796.zip
+RUN rm sdk-tools-linux-4333796.zip
 
-# install java 8
-RUN apt-get update && \
-    apt-get install -y openjdk-8-jdk && \
-    apt-get install -y ant && \
-    apt-get clean;
+RUN echo 'hello world'
 
-RUN apt-get update && \
-    apt-get install ca-certificates-java && \
-    apt-get clean && \
-    update-ca-certificates -f;
 
-ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
-RUN export JAVA_HOME
 

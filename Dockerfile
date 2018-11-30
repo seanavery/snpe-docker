@@ -20,6 +20,19 @@ RUN wget https://dl.google.com/android/repository/android-ndk-r13b-linux-x86_64.
 RUN unzip android-ndk-r13b-linux-x86_64.zip
 RUN rm android-ndk-r13b-linux-x86_64.zip
 
+# 4. setup neural prcossesing sdk
+COPY snpe-1.21.0/* /snpe-1.21.0/
+
+# 5. setup hexagon sdk
+COPY qualcomm_hexagon_sdk_lnx_3_0_eval.bin qualcomm_hexagon_sdk_lnx_3_0_eval.bin
+RUN chmod +x qualcomm_hexagon_sdk_lnx_3_0_eval.bin
+RUN . ./qualcomm_hexagon_sdk_lnx_3_0_eval.bin
+
+# 6. setup tensorflow
+RUN apt-get install git-core
+RUN git clone https://github.com/tensorflow/tensorflow.git 
+RUN cd tensorflow
+
 RUN echo 'hello world'
 
 

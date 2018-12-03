@@ -8,12 +8,13 @@ RUN apt-get install -y wget
 RUN apt-get install unzip
 
 # 1. install java 
-RUN apt-get install -y openjdk-8-jdk
+# RUN apt-get install -y openjdk-8-jdk
 
 # 2. install android sdk
 RUN wget https://dl.google.com/android/repository/sdk-tools-linux-4333796.zip
 RUN unzip sdk-tools-linux-4333796.zip
 RUN rm sdk-tools-linux-4333796.zip
+RUN apt-get install -y android-tools-adb
 
 # 3. install android ndk
 RUN wget https://dl.google.com/android/repository/android-ndk-r13b-linux-x86_64.zip
@@ -34,10 +35,7 @@ COPY tensorflow/* /tensorflow/
 
 # 7. copy over script files
 COPY compile_models.sh compile_models.sh
-CMD chmod +x /compile_models.sh
 
 # derp
-CMD echo 'chill life'
-ENTRYPOINT ["/bin/sh"]
 
 
